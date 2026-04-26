@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -31,6 +32,33 @@ func main() {
 	ch, queue, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, routing.PauseKey+"."+username, routing.PauseKey, pubsub.SimpleQueueTypeTransient)
 	if err != nil {
 		log.Fatalf("Failed to declare and bind queue: %v", err)
+	}
+
+	gs := gamelogic.NewGameState(username)
+loop:
+	for {
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
+			continue
+		}
+		command := words[0]
+		switch command {
+		case "spawn":
+			gs.CommandSpawn(words)
+			fmt.Println("spawned a unit")
+		case "move":
+			gs.CommandMove(words)
+		case "status":
+			gs.CommandStatus()
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+		case "quit":
+			gamelogic.PrintQuit()
+			break loop
+		default:
+			fmt.Println("error: unknown command")
+		}
+
 	}
 
 	log.Printf("Queue %v declared and bound", queue.Name)
