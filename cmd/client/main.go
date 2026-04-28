@@ -12,6 +12,13 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
+	}
+}
+
 func main() {
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
@@ -28,13 +35,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to get username: %v", err)
 	}
+	gs := gamelogic.NewGameState(username)
 
-	ch, queue, err := pubsub.DeclareAndBind(conn, routing.ExchangePerilDirect, routing.PauseKey+"."+username, routing.PauseKey, pubsub.SimpleQueueTypeTransient)
+	err = pubsub.SubscribeJSON(conn, routing.ExchangePerilDirect, routing.PauseKey+"."+username, routing.PauseKey, pubsub.SimpleQueueTypeTransient, handlerPause(gs))
 	if err != nil {
 		log.Fatalf("Failed to declare and bind queue: %v", err)
 	}
 
-	gs := gamelogic.NewGameState(username)
 loop:
 	for {
 		words := gamelogic.GetInput()
@@ -61,7 +68,6 @@ loop:
 
 	}
 
-	log.Printf("Queue %v declared and bound", queue.Name)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	<-sigChan
