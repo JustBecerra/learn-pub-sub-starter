@@ -5,10 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type SimpleQueueType string
+
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
 
 const (
 	SimpleQueueTypeDurable   SimpleQueueType = "durable"
@@ -38,15 +47,15 @@ func SubscribeJSON[T any](
 	queueName,
 	key string,
 	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
-	handler func(T),
-) error {
+	handler func(T) AckType,
+) (ackType AckType, err error) {
 	channel, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
-		return fmt.Errorf("failed to declare and bind: %v", err)
+		return Ack, fmt.Errorf("failed to declare and bind: %v", err)
 	}
 	newChan, err := channel.Consume("", "", false, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("failed to consume: %v", err)
+		return Ack, fmt.Errorf("failed to consume: %v", err)
 	}
 
 	go func() {
@@ -57,12 +66,22 @@ func SubscribeJSON[T any](
 				fmt.Printf("failed to unmarshal value: %v", err)
 				continue
 			}
-			handler(val)
-			d.Ack(false)
+			ackType := handler(val)
+			switch ackType {
+			case Ack:
+				d.Ack(false)
+				fmt.Println("acked message")
+			case NackRequeue:
+				d.Nack(false, true)
+				fmt.Println("nacked message and requeued")
+			case NackDiscard:
+				fmt.Println("nacked message and discarded")
+				d.Nack(false, false)
+			}
 		}
 	}()
 
-	return nil
+	return Ack, nil
 }
 
 func DeclareAndBind(
@@ -77,7 +96,12 @@ func DeclareAndBind(
 		return nil, amqp.Queue{}, fmt.Errorf("failed to create channel: %v", err)
 	}
 
-	queue, err := ch.QueueDeclare(queueName, queueType == SimpleQueueTypeDurable, queueType == SimpleQueueTypeTransient, queueType == SimpleQueueTypeTransient, false, nil)
+	err = ch.ExchangeDeclare(routing.ExchangePerilDlx, "fanout", true, false, false, false, nil)
+	if err != nil {
+		return nil, amqp.Queue{}, fmt.Errorf("failed to declare exchange: %v", err)
+	}
+
+	queue, err := ch.QueueDeclare(queueName, queueType == SimpleQueueTypeDurable, queueType == SimpleQueueTypeTransient, queueType == SimpleQueueTypeTransient, false, amqp.Table{"x-dead-letter-exchange": routing.ExchangePerilDlx})
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue: %v", err)
 	}
