@@ -118,6 +118,11 @@ func SubscribeGob[T any](
 	if err != nil {
 		return fmt.Errorf("failed to declare and bind: %v", err)
 	}
+	err = channel.Qos(10, 0, false)
+	if err != nil {
+		return fmt.Errorf("failed to set QoS: %v", err)
+	}
+
 	newChan, err := channel.Consume("", "", false, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("failed to consume: %v", err)

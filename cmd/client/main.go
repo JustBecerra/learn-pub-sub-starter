@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -150,7 +151,23 @@ loop:
 		case "status":
 			gs.CommandStatus()
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(words) < 2 {
+				fmt.Println("usage: spam <number>")
+				continue
+			}
+			n, err := strconv.Atoi(words[1])
+			if err != nil {
+				fmt.Printf("error: %s is not a valid number\n", words[1])
+				continue
+			}
+			fmt.Printf("spamming %d logs...\n", n)
+			for range n {
+				err := publishGameLog(ch, username, gamelogic.GetMaliciousLog())
+				if err != nil {
+					fmt.Printf("error publishing spam log: %v\n", err)
+					continue
+				}
+			}
 		case "quit":
 			gamelogic.PrintQuit()
 			break loop
