@@ -105,6 +105,51 @@ func SubscribeJSON[T any](
 	return Ack, nil
 }
 
+func SubscribeGob[T any](
+	conn *amqp.Connection,
+	exchange,
+	queueName,
+	key string,
+	simpleQueueType SimpleQueueType,
+	handler func(T) AckType,
+	unmarshaller func([]byte) (T, error),
+) error {
+	channel, _, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
+	if err != nil {
+		return fmt.Errorf("failed to declare and bind: %v", err)
+	}
+	newChan, err := channel.Consume("", "", false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to consume: %v", err)
+	}
+
+	go func() {
+		for d := range newChan {
+			var val T
+			dec := gob.NewDecoder(bytes.NewReader(d.Body))
+			err := dec.Decode(&val)
+			if err != nil {
+				fmt.Printf("failed to unmarshal value: %v", err)
+				continue
+			}
+			ackType := handler(val)
+			switch ackType {
+			case Ack:
+				d.Ack(false)
+				fmt.Println("acked message")
+			case NackRequeue:
+				d.Nack(false, true)
+				fmt.Println("nacked message and requeued")
+			case NackDiscard:
+				fmt.Println("nacked message and discarded")
+				d.Nack(false, false)
+			}
+		}
+	}()
+
+	return nil
+}
+
 func DeclareAndBind(
 	conn *amqp.Connection,
 	exchange,
